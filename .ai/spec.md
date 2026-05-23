@@ -26,6 +26,7 @@ func NewWorkerPool(options ...Option) *WorkerPool
 func (wp *WorkerPool) Start()
 func (wp *WorkerPool) Submit(ctx context.Context, job Job) error
 func (wp *WorkerPool) Stop()
+func (wp *WorkerPool) Len() int
 ```
 
 ### Options
@@ -35,7 +36,20 @@ func NumWorkers(num int) Option       // default: 1
 func JobQueueSize(size int) Option    // default: 1
 func SetHandler(handler Handler) Option
 func WithContext(ctx context.Context) Option
-func WithLogger(logger Logger) Option    // default: log.Printf
+func WithLogger(logger Logger) Option
+func OnError(fn ErrorHandler) Option  // default: nil (disabled)
+func WithMetrics(m MetricsHook) Option // default: nil (disabled)
+```
+
+### Additional Types
+
+```go
+type ErrorHandler func(job Job, err error)
+
+type MetricsHook interface {
+    JobProcessed(job Job)
+    JobFailed(job Job, err error)
+}
 ```
 
 ### Errors

@@ -33,6 +33,9 @@
 - [x] Lock-free close detection (atomic + recover)
 - [x] Pluggable Handler interface with live context
 - [x] Optional Logger interface
+- [x] OnError callback for failed jobs
+- [x] MetricsHook interface for observability
+- [x] Len() method for queue depth monitoring
 - [x] Tests with race detector (100% coverage, external test package)
 - [x] Basic usage example
 - [x] Kafka consumer group + DLQ example

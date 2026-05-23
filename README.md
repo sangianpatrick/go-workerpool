@@ -89,6 +89,17 @@ wp.Stop()
 | `SetHandler(h)` | Job processing handler | `UnimplementedHandler` (logs and skips) |
 | `WithContext(ctx)` | Parent context for the pool | `context.Background()` |
 | `WithLogger(l)` | Logger implementing `Logger` interface | `log.Printf` (standard library) |
+| `OnError(fn)` | Callback invoked when handler returns error | `nil` (disabled) |
+| `WithMetrics(m)` | Metrics hook for observability | `nil` (disabled) |
+
+## Methods
+
+| Method | Description |
+|--------|-------------|
+| `Start()` | Launch worker goroutines |
+| `Submit(ctx, job)` | Submit a job with caller-controlled timeout |
+| `Stop()` | Graceful shutdown (drain + cancel) |
+| `Len()` | Current number of jobs in the queue |
 
 ## Errors
 
@@ -111,7 +122,7 @@ This ensures handlers can use the context for downstream calls (HTTP, DB, tracin
 
 ### Basic Usage
 
-A simple example that submits 10 jobs to a pool of 3 workers with a queue capacity of 5.
+A simple example that submits 10 jobs to a pool of 3 workers with a queue capacity of 5. Includes `OnError` callback and `Len()` for queue monitoring.
 
 See [`_example/main.go`](./_example/main.go)
 
@@ -121,6 +132,9 @@ wp := workerpool.NewWorkerPool(
     workerpool.NumWorkers(3),
     workerpool.JobQueueSize(5),
     workerpool.SetHandler(&PrintHandler{}),
+    workerpool.OnError(func(job workerpool.Job, err error) {
+        log.Printf("job %s failed: %v", job.ID, err)
+    }),
 )
 wp.Start()
 
@@ -128,6 +142,8 @@ for i := 0; i < 10; i++ {
     submitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
     wp.Submit(submitCtx, workerpool.Job{ID: fmt.Sprintf("job-%d", i), Data: i})
     cancel()
+
+    fmt.Printf("queue depth: %d\n", wp.Len())
 }
 
 wp.Stop()

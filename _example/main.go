@@ -28,6 +28,9 @@ func main() {
 		workerpool.NumWorkers(3),
 		workerpool.JobQueueSize(5),
 		workerpool.SetHandler(&PrintHandler{}),
+		workerpool.OnError(func(job workerpool.Job, err error) {
+			fmt.Printf("job %s failed: %v\n", job.ID, err)
+		}),
 	)
 
 	wp.Start()
@@ -43,6 +46,8 @@ func main() {
 		if err != nil {
 			fmt.Printf("failed to submit job-%d: %v\n", i, err)
 		}
+
+		fmt.Printf("queue depth: %d\n", wp.Len())
 	}
 
 	wp.Stop()
