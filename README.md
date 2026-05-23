@@ -3,6 +3,7 @@
 [![CI](https://github.com/sangianpatrick/go-workerpool/actions/workflows/ci.yml/badge.svg)](https://github.com/sangianpatrick/go-workerpool/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/sangianpatrick/go-workerpool.svg)](https://pkg.go.dev/github.com/sangianpatrick/go-workerpool)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sangianpatrick/go-workerpool)](https://goreportcard.com/report/github.com/sangianpatrick/go-workerpool)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sangianpatrick/go-workerpool/actions/workflows/ci.yml)
 
 A simple, lightweight worker pool for Go with non-blocking job submission, configurable timeout, and graceful shutdown.
 
