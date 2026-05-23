@@ -2,6 +2,7 @@ package workerpool_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,12 +19,31 @@ func (h *countHandler) Handle(_ context.Context, _ workerpool.Job) error {
 	return nil
 }
 
+type failHandler struct{}
+
+func (h *failHandler) Handle(_ context.Context, _ workerpool.Job) error {
+	return errors.New("process failed")
+}
+
 type testLogger struct {
 	called atomic.Bool
 }
 
 func (l *testLogger) Printf(string, ...any) {
 	l.called.Store(true)
+}
+
+type testMetrics struct {
+	processed atomic.Int64
+	failed    atomic.Int64
+}
+
+func (m *testMetrics) JobProcessed(_ workerpool.Job) {
+	m.processed.Add(1)
+}
+
+func (m *testMetrics) JobFailed(_ workerpool.Job, _ error) {
+	m.failed.Add(1)
 }
 
 func TestWorkerPoolProcessesAllJobs(t *testing.T) {
@@ -67,7 +87,6 @@ func TestSubmitAfterStopReturnsError(t *testing.T) {
 
 func TestSubmitTimesOut(t *testing.T) {
 	wp := workerpool.NewWorkerPool(workerpool.NumWorkers(1), workerpool.JobQueueSize(1))
-	// Don't start workers — channel will fill up
 	_ = wp.Submit(context.Background(), workerpool.Job{ID: "fill"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -86,7 +105,7 @@ func TestStopIsIdempotent(t *testing.T) {
 	wp := workerpool.NewWorkerPool(workerpool.NumWorkers(2), workerpool.JobQueueSize(1))
 	wp.Start()
 	wp.Stop()
-	wp.Stop() // should not panic
+	wp.Stop()
 }
 
 func TestContextCancellationStopsPool(t *testing.T) {
@@ -128,7 +147,6 @@ func TestWithLoggerIsUsed(t *testing.T) {
 }
 
 func TestDefaultLoggerDoesNotPanic(t *testing.T) {
-	// Default logger uses log.Printf — just ensure no panic on Start/Stop
 	wp := workerpool.NewWorkerPool(workerpool.NumWorkers(1), workerpool.JobQueueSize(1))
 	wp.Start()
 	wp.Stop()
@@ -138,7 +156,6 @@ func TestSubmitRecoverOnClosedChannel(t *testing.T) {
 	wp := workerpool.NewWorkerPool(workerpool.NumWorkers(1), workerpool.JobQueueSize(1))
 	wp.Start()
 
-	// Force close the channel without setting closed flag to trigger recover
 	wp.ForceCloseChannel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -151,11 +168,12 @@ func TestSubmitRecoverOnClosedChannel(t *testing.T) {
 }
 
 func TestOptionsWithNilValues(t *testing.T) {
-	// Should not panic; nil values are ignored
 	wp := workerpool.NewWorkerPool(
 		workerpool.WithContext(nil),
 		workerpool.SetHandler(nil),
 		workerpool.WithLogger(nil),
+		workerpool.OnError(nil),
+		workerpool.WithMetrics(nil),
 		workerpool.NumWorkers(0),
 		workerpool.JobQueueSize(0),
 	)
@@ -172,4 +190,100 @@ func TestUnimplementedHandler(t *testing.T) {
 	wp.Submit(ctx, workerpool.Job{ID: "unimplemented", Data: "test"})
 
 	wp.Stop()
+}
+
+func TestLen(t *testing.T) {
+	wp := workerpool.NewWorkerPool(workerpool.NumWorkers(1), workerpool.JobQueueSize(5))
+
+	_ = wp.Submit(context.Background(), workerpool.Job{ID: "1"})
+	_ = wp.Submit(context.Background(), workerpool.Job{ID: "2"})
+
+	if got := wp.Len(); got != 2 {
+		t.Fatalf("expected Len() = 2, got %d", got)
+	}
+
+	wp.Start()
+	wp.Stop()
+
+	if got := wp.Len(); got != 0 {
+		t.Fatalf("expected Len() = 0 after stop, got %d", got)
+	}
+}
+
+func TestOnErrorCallback(t *testing.T) {
+	var captured atomic.Int64
+	wp := workerpool.NewWorkerPool(
+		workerpool.NumWorkers(1),
+		workerpool.JobQueueSize(5),
+		workerpool.SetHandler(&failHandler{}),
+		workerpool.OnError(func(_ workerpool.Job, _ error) {
+			captured.Add(1)
+		}),
+	)
+	wp.Start()
+
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		wp.Submit(ctx, workerpool.Job{ID: "fail"})
+		cancel()
+	}
+
+	wp.Stop()
+
+	if got := captured.Load(); got != 3 {
+		t.Fatalf("expected OnError called 3 times, got %d", got)
+	}
+}
+
+func TestMetricsHook(t *testing.T) {
+	m := &testMetrics{}
+	h := &countHandler{}
+	wp := workerpool.NewWorkerPool(
+		workerpool.NumWorkers(2),
+		workerpool.JobQueueSize(5),
+		workerpool.SetHandler(h),
+		workerpool.WithMetrics(m),
+	)
+	wp.Start()
+
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		wp.Submit(ctx, workerpool.Job{ID: "ok"})
+		cancel()
+	}
+
+	wp.Stop()
+
+	if got := m.processed.Load(); got != 5 {
+		t.Fatalf("expected 5 processed, got %d", got)
+	}
+	if got := m.failed.Load(); got != 0 {
+		t.Fatalf("expected 0 failed, got %d", got)
+	}
+}
+
+func TestMetricsHookOnFailure(t *testing.T) {
+	m := &testMetrics{}
+	wp := workerpool.NewWorkerPool(
+		workerpool.NumWorkers(1),
+		workerpool.JobQueueSize(5),
+		workerpool.SetHandler(&failHandler{}),
+		workerpool.WithMetrics(m),
+	)
+	wp.Start()
+
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		wp.Submit(ctx, workerpool.Job{ID: "fail"})
+		cancel()
+	}
+
+	wp.Stop()
+
+	if got := m.failed.Load(); got != 3 {
+		t.Fatalf("expected 3 failed, got %d", got)
+	}
+	if got := m.processed.Load(); got != 0 {
+		t.Fatalf("expected 0 processed, got %d", got)
+	}
 }

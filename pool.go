@@ -6,6 +6,15 @@ import (
 	"sync/atomic"
 )
 
+// ErrorHandler is called when a job returns an error.
+type ErrorHandler func(job Job, err error)
+
+// MetricsHook provides observability into the worker pool.
+type MetricsHook interface {
+	JobProcessed(job Job)
+	JobFailed(job Job, err error)
+}
+
 type config struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -16,6 +25,8 @@ type config struct {
 	numWorkers   int
 	handler      Handler
 	logger       Logger
+	onError      ErrorHandler
+	metrics      MetricsHook
 }
 
 type WorkerPool struct {
@@ -64,13 +75,33 @@ func SetHandler(handler Handler) Option {
 	}
 }
 
-// WithLogger sets a custom logger. Defaults to a no-op logger.
+// WithLogger sets a custom logger. Defaults to log.Printf.
 func WithLogger(logger Logger) Option {
 	return func(c *config) {
 		if logger == nil {
 			return
 		}
 		c.logger = logger
+	}
+}
+
+// OnError sets a callback that is invoked when a handler returns an error.
+func OnError(fn ErrorHandler) Option {
+	return func(c *config) {
+		if fn == nil {
+			return
+		}
+		c.onError = fn
+	}
+}
+
+// WithMetrics sets a metrics hook for observability.
+func WithMetrics(m MetricsHook) Option {
+	return func(c *config) {
+		if m == nil {
+			return
+		}
+		c.metrics = m
 	}
 }
 
@@ -117,6 +148,11 @@ func (wp *WorkerPool) Submit(ctx context.Context, job Job) (err error) {
 	}
 }
 
+// Len returns the current number of jobs in the queue.
+func (wp *WorkerPool) Len() int {
+	return len(wp.config.jobChan)
+}
+
 // Stop gracefully shuts down the worker pool. Workers drain remaining jobs before exiting.
 // The pool's context is canceled only after all jobs have been processed.
 func (wp *WorkerPool) Stop() {
@@ -140,7 +176,17 @@ func (wp *WorkerPool) Start() {
 func (wp *WorkerPool) workerRun(id int) {
 	defer wp.config.wg.Done()
 	for job := range wp.config.jobChan {
-		wp.config.handler.Handle(wp.config.ctx, job)
+		err := wp.config.handler.Handle(wp.config.ctx, job)
+		if err != nil {
+			if wp.config.onError != nil {
+				wp.config.onError(job, err)
+			}
+			if wp.config.metrics != nil {
+				wp.config.metrics.JobFailed(job, err)
+			}
+		} else if wp.config.metrics != nil {
+			wp.config.metrics.JobProcessed(job)
+		}
 	}
 	wp.config.logger.Printf("[workerpool] worker %d stopped", id)
 }
