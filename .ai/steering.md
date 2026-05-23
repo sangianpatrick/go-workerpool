@@ -35,7 +35,12 @@
 - `_example/main.go` — Basic usage example
 - `_example/kafka/main.go` — Kafka consumer group + DLQ example
 
-## Kafka Integration Guidelines
+## CI/CD
+- GitHub Actions runs on every push/PR to `main`
+- Test job: `go test -race -coverprofile` with 100% coverage gate
+- Security job: `govulncheck` + `gosec`
+- Codecov uploads coverage for dynamic badge
+- Minimum Go version: 1.23
 - Commit offset after submit, not after processing (at-most-once)
 - Use DLQ for processing failures: produce to `<topic>.dlq` with error headers
 - Use `signal.NotifyContext` + `wp.Stop()` for graceful shutdown

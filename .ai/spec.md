@@ -76,7 +76,12 @@ type MetricsHook interface {
 3. `wg.Wait()` → all workers finish processing
 4. `cancel()` → pool context canceled
 
-### Kafka Integration Notes
+### Requirements
+
+- Go 1.23+
+- Zero external dependencies
+
+## Kafka Integration Notes
 
 When used with Kafka consumer groups:
 - Submit is non-blocking when queue has capacity (immediate send to buffered channel)

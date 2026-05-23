@@ -39,3 +39,6 @@
 - [x] Tests with race detector (100% coverage, external test package)
 - [x] Basic usage example
 - [x] Kafka consumer group + DLQ example
+- [x] GitHub Actions CI (test + race + coverage gate + security scan)
+- [x] Codecov integration for dynamic coverage reporting
+- [x] Minimum Go 1.23 (resolves GO-2025-3750)
